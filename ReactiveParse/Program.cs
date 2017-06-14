@@ -4,56 +4,68 @@ using System.Linq;
 using System.Reactive.Linq;
 using System.Text;
 using System.Threading.Tasks;
-
+using System.Collections.Immutable;
 namespace ReactiveParse
 {
-    public interface IInput
+    public interface IInput<T>
     {
-        string Prefix { get; }
-        char Head { get; }
+        IImmutableList<T> Head { get; }
+        IObservable<T> Tail { get; }
     }
-    public interface IResult
+    public interface IResult<T>
     {
-        Char Head { get; }
-        IObservable<char> Tail { get; }
+        IInput<T> State { get; }
+        T Current { get; }
     }
-
-    public delegate IObservable<IResult> Parser(IObservable<char> input);
-    class Result : IResult
+    
+    public delegate IObservable<IResult<T>> Parser<T>(IInput<T> input);
+    class Input<T> : IInput<T>
     {
-        public char Head { get; }
-
-        public IObservable<char> Tail { get; }
-        public Result(char head,IObservable<char> tail)
+        public Input(IImmutableList<T> head,IObservable<T> tail)
         {
             Head = head;
             Tail = tail;
         }
+        public Input(IImmutableList<T> head,T body,IObservable<T> tail)
+        {
+            Head = head.Add(body);
+            Tail = tail;
+        }
+        public IImmutableList<T> Head { get; }
+        public IObservable<T> Tail { get; }
+    }
+
+    class Result<T> : IResult<T>
+    {
+        public IInput<T> State { get; }
+        public T Current { get; }
+        public Result(T current,IInput<T> state)
+        {
+            State = state;
+            Current = current;
+        }
     }
     public static class ReactiveParse
     {
-        public static Parser Zero()
+        public static Parser<T> None<T>()
         {
-            return input=>Observable.Empty<IResult>();
+            return input=>Observable.Empty<IResult<T>>();
         }
-        public static Parser Result(char c)
+        public static Parser<T> Result<T>(T current,IInput<T> state)
         {
-            return input => Observable.Return(new Result(c,Observable.Empty<char>()));
+            return input => Observable.Return(new Result<T>(current,state));
         }
-        public static Parser Item()
+        public static Parser<T> Read<T>()
         {
-            return input => Observable.Create<IResult>(output =>
+            return input => Observable.Create<IResult<T>>(output =>
             {
-                return input.Subscribe(c =>
+                return input.Tail.Subscribe(c =>
                 {
-                    output.OnNext(new Result(c, input));
+                    output.OnNext(new Result<T>(c, new Input<T>(input.Head,c,input.Tail)));
                 });
             });
         }
-        public static Parser Bind(this Parser first,Func<char,Parser> nextFactory)
-        {
-            return input => first(input).Select(r1 => nextFactory(r1.Head)(r1.Tail)).Merge();
-        }
+      
 
     }
     class Program
