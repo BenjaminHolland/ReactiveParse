@@ -17,8 +17,9 @@ namespace ReactiveParse
         IInput<T> State { get; }
         T Current { get; }
     }
-    
+
     public delegate IObservable<IResult<T>> Parser<T>(IInput<T> input);
+    public delegate IObservable<IResult<V>> Parser<U,V>(IInput<U> input);
     class Input<T> : IInput<T>
     {
         public Input(IImmutableList<T> head,IObservable<T> tail)
@@ -65,14 +66,31 @@ namespace ReactiveParse
                 });
             });
         }
-      
-
+        public static Parser<T> Bind<T>(this Parser<T> first,Func<T,Parser<T>> nextFactory)
+        {
+            return input => first(input).Select(r1 => nextFactory(r1.Current)(r1.State)).Merge();
+        }
+    }
+    public static class ObservableExtensions
+    {
+        public static IObservable<IResult<T>> Parse<T>(this IObservable<T> self, Parser<T> parser)
+        {
+            return parser(new Input<T>(ImmutableArray.Create<T>(), self)).Select(r=>r);
+        }
     }
     class Program
     {
-
+        
         static void Main(string[] args)
         {
+            var sequence = "HelloWorld".ToObservable().Select(c =>
+                  Observable.Return(c).Delay(TimeSpan.FromSeconds(1))
+                ).Concat();
+            var result=sequence.Parse(ReactiveParse.Read<char>());
+            result.ForEachAsync(x =>
+            {
+                Console.WriteLine(x.Current);
+            }).Wait();
         }
     }
 }
